@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+.env/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Logs and database
+*.log
+db.sqlite3
+
+# Python package files
+*.egg-info/
+*.dist-info/
+
+# PyQt6 build artifacts
+*.qrc
+*.ui
+
+# Ignore IDE settings
+.vscode/
+.idea/
+*.iml

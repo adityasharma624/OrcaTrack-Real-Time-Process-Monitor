@@ -1,1 +1,3 @@
-# makes 'gui' a python package
+from .dashboard import Dashboard
+
+__all__ = ["Dashboard"]
