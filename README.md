@@ -1,92 +1,71 @@
-# OrcaTrack - Real-Time Process Monitor
+# Orca Track
 
-A modern, feature-rich process monitoring tool built with C++ and ImGui. OrcaTrack provides real-time information about system processes, CPU usage, and memory consumption with a beautiful and intuitive interface.
+A real-time process monitoring tool for Windows that provides detailed CPU and memory usage tracking for all running processes.
 
 ## Features
 
-- Real-time process monitoring with detailed information
-- CPU and memory usage visualization
-- Process management capabilities
-- High resource usage alerts
-- Customizable thresholds and alert settings
-- Modern, responsive GUI with dark theme
-
-## Prerequisites
-
-- Windows 10 or later
-- Visual Studio 2019/2022 with C++ desktop development workload
-- CMake 3.15 or later
-- Git
+- Real-time monitoring of all system processes
+- CPU usage tracking with percentage display
+- Memory usage monitoring in MB/GB
+- System-wide resource usage overview
+- Process filtering and sorting capabilities
+- Modern ImGui-based user interface
 
 ## Building from Source
 
-1. Install required tools:
-   ```powershell
-   # Install Visual Studio 2022 Build Tools (if not already installed)
-   # Download from: https://visualstudio.microsoft.com/visual-cpp-build-tools/
-   # Select "Desktop development with C++"
+### Prerequisites
 
-   # Install CMake (if not already installed)
-   winget install Kitware.CMake
-   # or download from https://cmake.org/download/
-   ```
+- Visual Studio 2022 with C++ desktop development workload
+- CMake 3.15 or higher
+- Git
 
-2. Clone the repository and initialize submodules:
-   ```powershell
-   git clone https://github.com/yourusername/OrcaTrack.git
-   cd OrcaTrack
-   mkdir external
-   cd external
-   
-   # Clone GLFW
-   git clone https://github.com/glfw/glfw.git
-   
-   # Clone ImGui
-   git clone https://github.com/ocornut/imgui.git
-   cd imgui
-   git checkout docking
-   ```
+### Dependencies (automatically handled by CMake)
+
+- Dear ImGui
+- GLFW
+- Windows SDK
+
+### Build Instructions
+
+1. Clone the repository:
+```bash
+git clone https://github.com/[your-username]/Real-Time-Process-Monitor.git
+cd Real-Time-Process-Monitor
+```
+
+2. Create build directory and generate project files:
+```bash
+mkdir build
+cd build
+cmake ..
+```
 
 3. Build the project:
-   ```powershell
-   cd ..
-   mkdir build
-   cd build
-   cmake ..
-   cmake --build . --config Release
-   ```
+```bash
+cmake --build . --config Debug
+```
 
-4. Run the application:
-   ```powershell
-   ./Release/orca_track.exe
-   ```
+The executable will be created at `build/Debug/orca_track.exe`
 
-## Usage
+## Project Structure
 
-1. **Process List Tab**
-   - View all running processes
-   - Monitor CPU and memory usage per process
-   - Terminate problematic processes
-
-2. **Visualization Tab**
-   - Real-time CPU usage graph
-   - Real-time memory usage graph
-   - Historical data visualization
-
-3. **Settings Tab**
-   - Adjust resource usage threshold
-   - Configure alert timeout
-   - Customize monitoring parameters
-
-4. **Alerts**
-   - Automatic notifications for high resource usage
-   - Quick access to process termination
-   - Configurable thresholds
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+- `gui/` - User interface implementation using Dear ImGui
+- `monitor/` - Core process monitoring functionality
+- `external/` - Third-party dependencies
+- `CMakeLists.txt` - Build configuration
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. 
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to your branch
+5. Create a Pull Request
+
+## License
+
+[Your chosen license]
+
+## Version History
+
+- v0.1.0-alpha: Initial release with basic process monitoring and resource tracking 
