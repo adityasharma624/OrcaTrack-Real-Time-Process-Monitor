@@ -4,12 +4,36 @@ A real-time process monitoring tool for Windows that provides detailed CPU and m
 
 ## Features
 
+### Process Monitoring
 - Real-time monitoring of all system processes
 - CPU usage tracking with percentage display
 - Memory usage monitoring in MB/GB
 - System-wide resource usage overview
 - Process filtering and sorting capabilities
 - Modern ImGui-based user interface
+
+### Process Management
+- Process termination capability
+- Process priority control (Idle, Below Normal, Normal, Above Normal, High, Real-time)
+- Process suspension and resumption
+- Process path and elevation status information
+
+### Resource Monitoring
+- Total system CPU utilization tracking
+- Total and available memory monitoring
+- Per-process resource usage statistics
+- High resource usage detection and alerts
+
+### Alert System
+- Configurable CPU and memory usage thresholds
+- Consecutive high usage detection
+- Customizable alert timeout settings
+- Process-specific alert tracking
+
+### Security Features
+- Process privilege verification
+- Elevated process detection
+- Secure process management with proper access controls
 
 ## Building from Source
 
@@ -50,9 +74,33 @@ The executable will be created at `build/Debug/orca_track.exe`
 ## Project Structure
 
 - `gui/` - User interface implementation using Dear ImGui
+  - Window management and UI rendering
+  - Process list display and interaction
 - `monitor/` - Core process monitoring functionality
+  - Process information gathering
+  - Resource usage calculation
+  - Process management operations
 - `external/` - Third-party dependencies
+- `src/` - Main application entry point
 - `CMakeLists.txt` - Build configuration
+
+## Usage
+
+### Basic Operations
+- View all running processes with their resource usage
+- Sort processes by CPU usage, memory usage, or name
+- Monitor system-wide resource utilization
+
+### Process Management
+- Right-click on processes to access management options
+- Change process priorities
+- Suspend/Resume processes
+- Terminate processes (requires appropriate privileges)
+
+### Alert Configuration
+- Set custom thresholds for CPU and memory alerts
+- Configure alert timeout periods
+- Monitor processes exceeding resource thresholds
 
 ## Contributing
 
@@ -65,10 +113,6 @@ The executable will be created at `build/Debug/orca_track.exe`
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Version History
-
-- v0.1.0-alpha: Initial release with basic process monitoring and resource tracking
 
 ## Acknowledgments
 
