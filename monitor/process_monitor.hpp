@@ -5,14 +5,23 @@
 #include <chrono>
 #include <mutex>
 #include <memory>
+#include <windows.h>
 
 struct ProcessInfo {
-    unsigned long pid;
-    std::string name;
+    DWORD pid;
+    std::wstring name;
     double cpuUsage;
-    size_t memoryUsage;
-    std::chrono::system_clock::time_point lastHighUsageTime;
+    double memoryUsage;
     bool isHighUsage;
+    std::chrono::system_clock::time_point lastHighUsageTime;
+    
+    // CPU usage tracking
+    FILETIME lastKernelTime;
+    FILETIME lastUserTime;
+    FILETIME lastUpdateTime;
+    ULARGE_INTEGER prevSystemTime;
+    ULARGE_INTEGER prevUserTime;
+    ULARGE_INTEGER prevKernelTime;
 };
 
 // Forward declaration
@@ -24,9 +33,9 @@ public:
     ~ProcessMonitor();
 
     void update();
-    std::vector<ProcessInfo> getProcessList() const;
-    double getTotalCPUUsage() const;
-    size_t getTotalMemoryUsage() const;
+    const std::vector<ProcessInfo>& getProcesses() const;
+    double getTotalCpuUsage() const;
+    double getTotalMemoryUsage() const;
     size_t getTotalMemoryAvailable() const;
     void terminateProcess(unsigned long pid);
     
@@ -36,13 +45,33 @@ public:
     std::vector<ProcessInfo> getHighUsageProcesses() const;
 
 private:
+    struct ProcessTimes {
+        ULARGE_INTEGER kernelTime;
+        ULARGE_INTEGER userTime;
+        ULARGE_INTEGER systemTime;
+    };
+
     std::unique_ptr<ProcessMonitorImpl> pimpl;
-    std::map<unsigned long, ProcessInfo> processes;
+    std::vector<ProcessInfo> processes;
     mutable std::mutex processMutex;
     double usageThreshold;
     std::chrono::seconds alertTimeout;
-    double totalCpuUsage = 0.0;
+    double totalCpuUsage;
+    double totalMemoryUsage;
+    int numProcessors;
     
+    // System time tracking
+    FILETIME lastIdleTime;
+    FILETIME lastKernelTime;
+    FILETIME lastUserTime;
+    FILETIME lastUpdateTime;
+
+    // Process time tracking
+    std::map<unsigned long, ProcessTimes> previousProcessTimes;
+
     void updateProcessInfo(ProcessInfo& info);
     void checkHighUsage(ProcessInfo& info);
+    double calculateCpuUsage(const ProcessInfo& info);
+    double calculateMemoryUsage(const ProcessInfo& info);
+    void updateTotalCpuUsage();
 }; 

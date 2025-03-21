@@ -1,9 +1,8 @@
 #pragma once
-#include "../monitor/process_monitor.hpp"
 #include <string>
-#include <vector>
-
-struct GLFWwindow;
+#include <memory>
+#include <GLFW/glfw3.h>
+#include "../monitor/process_monitor.hpp"
 
 class Window {
 public:
@@ -13,27 +12,9 @@ public:
     void run();
 
 private:
-    struct ChartData {
-        std::vector<float> values;
-        size_t maxPoints;
-
-        explicit ChartData(size_t max = 100) : maxPoints(max) {}
-        void addValue(float value);
-    };
-
+    std::string title;
+    int width;
+    int height;
+    ProcessMonitor& monitor;
     GLFWwindow* window;
-    ProcessMonitor& processMonitor;
-    bool showProcessTab;
-    bool showVisualizationTab;
-    bool showSettingsTab;
-    ChartData cpuHistory;
-    ChartData memoryHistory;
-
-    void initializeImGui();
-    void cleanup();
-    void render();
-    void renderProcessTab();
-    void renderVisualizationTab();
-    void renderSettingsTab();
-    void renderAlerts();
 }; 
