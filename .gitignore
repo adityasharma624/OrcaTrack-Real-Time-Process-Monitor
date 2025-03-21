@@ -1,29 +1,45 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*.so
+# Build directories
+build/
+out/
+Debug/
+Release/
+x64/
+Win32/
 
-# Virtual environment
-venv/
-.env/
-
-# OS-specific files
-.DS_Store
-Thumbs.db
-
-# Logs and database
-*.log
-db.sqlite3
-
-# Python package files
-*.egg-info/
-*.dist-info/
-
-# PyQt6 build artifacts
-*.qrc
-*.ui
-
-# Ignore IDE settings
+# IDE files
+.vs/
 .vscode/
-.idea/
-*.iml
+*.suo
+*.user
+*.sln
+*.vcxproj
+*.vcxproj.filters
+
+# Compiled files
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.idb
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+!CMakeLists.txt
+
+# Dependencies
+external/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db 
