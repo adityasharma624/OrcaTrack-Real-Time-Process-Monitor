@@ -8,6 +8,13 @@
 #include <sstream>
 #include <iomanip>
 
+// NT Status definitions
+#ifndef NT_SUCCESS
+#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#endif
+
+typedef LONG NTSTATUS;
+
 class PDHQuery {
 public:
     PDHQuery() {
@@ -104,6 +111,12 @@ void ProcessMonitor::updateProcessInfo(ProcessInfo& info) {
     HANDLE processHandle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, info.pid);
     if (processHandle == nullptr) {
         return;
+    }
+
+    // Get process priority
+    info.priority = GetPriorityClass(processHandle);
+    if (info.priority == 0) {
+        info.priority = NORMAL_PRIORITY_CLASS; // Default to normal if can't get priority
     }
 
     FILETIME createTime, exitTime, kernelTime, userTime;
@@ -265,12 +278,189 @@ size_t ProcessMonitor::getTotalMemoryAvailable() const {
     return 0;
 }
 
-void ProcessMonitor::terminateProcess(unsigned long pid) {
-    HANDLE processHandle = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
-    if (processHandle != nullptr) {
-        TerminateProcess(processHandle, 1);
-        CloseHandle(processHandle);
+bool ProcessMonitor::adjustProcessPrivileges() {
+    HANDLE hToken;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
+        return false;
     }
+
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+    if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid)) {
+        CloseHandle(hToken);
+        return false;
+    }
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    bool result = AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL);
+    CloseHandle(hToken);
+    return result;
+}
+
+HANDLE ProcessMonitor::openProcessWithPrivileges(unsigned long pid, DWORD access) const {
+    HANDLE hProcess = OpenProcess(access, FALSE, pid);
+    if (!hProcess) {
+        // Try to get debug privileges and retry
+        const_cast<ProcessMonitor*>(this)->adjustProcessPrivileges();
+        hProcess = OpenProcess(access, FALSE, pid);
+    }
+    return hProcess;
+}
+
+bool ProcessMonitor::hasProcessPrivileges() const {
+    HANDLE hToken;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        return false;
+    }
+
+    PRIVILEGE_SET privs;
+    privs.PrivilegeCount = 1;
+    privs.Control = PRIVILEGE_SET_ALL_NECESSARY;
+    LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &privs.Privilege[0].Luid);
+
+    BOOL hasPrivilege;
+    bool result = PrivilegeCheck(hToken, &privs, &hasPrivilege);
+    CloseHandle(hToken);
+    return result && hasPrivilege;
+}
+
+bool ProcessMonitor::terminateProcess(unsigned long pid) {
+    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_TERMINATE);
+    if (!hProcess) {
+        return false;
+    }
+
+    bool result = TerminateProcess(hProcess, 1) != 0;
+    CloseHandle(hProcess);
+    return result;
+}
+
+bool ProcessMonitor::setPriority(unsigned long pid, Priority priority) {
+    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_SET_INFORMATION);
+    if (!hProcess) {
+        return false;
+    }
+
+    bool result = SetPriorityClass(hProcess, static_cast<DWORD>(priority)) != 0;
+    CloseHandle(hProcess);
+    return result;
+}
+
+bool ProcessMonitor::suspendProcess(unsigned long pid) {
+    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_SUSPEND_RESUME);
+    if (!hProcess) {
+        return false;
+    }
+
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    if (!hNtdll) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    using NtSuspendProcessFn = NTSTATUS(NTAPI*)(HANDLE ProcessHandle);
+    NtSuspendProcessFn pfnNtSuspendProcess = nullptr;
+    
+    try {
+        pfnNtSuspendProcess = reinterpret_cast<NtSuspendProcessFn>(
+            GetProcAddress(hNtdll, "NtSuspendProcess"));
+        
+        if (!pfnNtSuspendProcess) {
+            CloseHandle(hProcess);
+            return false;
+        }
+
+        NTSTATUS status = pfnNtSuspendProcess(hProcess);
+        CloseHandle(hProcess);
+        return NT_SUCCESS(status);
+    }
+    catch (...) {
+        CloseHandle(hProcess);
+        return false;
+    }
+}
+
+bool ProcessMonitor::resumeProcess(unsigned long pid) {
+    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_SUSPEND_RESUME);
+    if (!hProcess) {
+        return false;
+    }
+
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    if (!hNtdll) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    using NtResumeProcessFn = NTSTATUS(NTAPI*)(HANDLE ProcessHandle);
+    NtResumeProcessFn pfnNtResumeProcess = nullptr;
+    
+    try {
+        pfnNtResumeProcess = reinterpret_cast<NtResumeProcessFn>(
+            GetProcAddress(hNtdll, "NtResumeProcess"));
+        
+        if (!pfnNtResumeProcess) {
+            CloseHandle(hProcess);
+            return false;
+        }
+
+        NTSTATUS status = pfnNtResumeProcess(hProcess);
+        CloseHandle(hProcess);
+        return NT_SUCCESS(status);
+    }
+    catch (...) {
+        CloseHandle(hProcess);
+        return false;
+    }
+}
+
+std::wstring ProcessMonitor::getProcessPath(unsigned long pid) {
+    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_QUERY_LIMITED_INFORMATION);
+    if (!hProcess) {
+        return L"";
+    }
+
+    wchar_t path[MAX_PATH];
+    DWORD size = MAX_PATH;
+    bool result = QueryFullProcessImageNameW(hProcess, 0, path, &size) != 0;
+    CloseHandle(hProcess);
+
+    return result ? std::wstring(path) : L"";
+}
+
+bool ProcessMonitor::isProcessElevated(unsigned long pid) {
+    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_QUERY_LIMITED_INFORMATION);
+    if (!hProcess) {
+        return false;
+    }
+
+    HANDLE hToken;
+    if (!OpenProcessToken(hProcess, TOKEN_QUERY, &hToken)) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    TOKEN_ELEVATION elevation;
+    DWORD size;
+    bool result = GetTokenInformation(hToken, TokenElevation, &elevation,
+        sizeof(elevation), &size) != 0;
+
+    CloseHandle(hToken);
+    CloseHandle(hProcess);
+    return result && elevation.TokenIsElevated;
+}
+
+bool ProcessMonitor::canModifyProcess(unsigned long pid) {
+    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_QUERY_LIMITED_INFORMATION);
+    if (!hProcess) {
+        return false;
+    }
+
+    CloseHandle(hProcess);
+    return true;
 }
 
 std::vector<ProcessInfo> ProcessMonitor::getHighUsageProcesses() const {

@@ -16,6 +16,7 @@ struct ProcessInfo {
     std::chrono::system_clock::time_point lastHighUsageTime;
     bool alertTriggered;  // New field to track if alert has been shown
     int highUsageCount;   // New field to count consecutive high usage readings
+    int priority;  // Current process priority
     
     // CPU usage tracking
     FILETIME lastKernelTime;
@@ -31,6 +32,16 @@ class ProcessMonitorImpl;
 
 class ProcessMonitor {
 public:
+    // Process priority levels matching Windows priorities
+    enum class Priority {
+        Idle = IDLE_PRIORITY_CLASS,
+        BelowNormal = BELOW_NORMAL_PRIORITY_CLASS,
+        Normal = NORMAL_PRIORITY_CLASS,
+        AboveNormal = ABOVE_NORMAL_PRIORITY_CLASS,
+        High = HIGH_PRIORITY_CLASS,
+        RealTime = REALTIME_PRIORITY_CLASS
+    };
+
     ProcessMonitor();
     ~ProcessMonitor();
 
@@ -39,7 +50,15 @@ public:
     double getTotalCpuUsage() const;
     double getTotalMemoryUsage() const;
     size_t getTotalMemoryAvailable() const;
-    void terminateProcess(unsigned long pid);
+    
+    // Enhanced process management functions
+    bool terminateProcess(unsigned long pid);
+    bool setPriority(unsigned long pid, Priority priority);
+    bool suspendProcess(unsigned long pid);
+    bool resumeProcess(unsigned long pid);
+    std::wstring getProcessPath(unsigned long pid);
+    bool isProcessElevated(unsigned long pid);
+    bool canModifyProcess(unsigned long pid);
     
     // Alert settings
     void setUsageThreshold(double threshold) { usageThreshold = threshold; }
@@ -86,4 +105,9 @@ private:
     double calculateCpuUsage(const ProcessInfo& info);
     double calculateMemoryUsage(const ProcessInfo& info);
     void updateTotalCpuUsage();
+
+    // Helper functions for process management
+    HANDLE openProcessWithPrivileges(unsigned long pid, DWORD access) const;
+    bool adjustProcessPrivileges();
+    bool hasProcessPrivileges() const;
 }; 

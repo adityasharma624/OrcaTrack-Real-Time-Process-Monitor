@@ -26,4 +26,9 @@ private:
 
     void renderProcessTable();
     void sortProcessList(std::vector<ProcessInfo>& processes);
+    
+    // Helper functions for process management
+    std::string getPriorityString(int priority);
+    bool showConfirmationDialog(const std::string& title, const std::string& message);
+    void showErrorDialog(const std::string& message);
 }; 

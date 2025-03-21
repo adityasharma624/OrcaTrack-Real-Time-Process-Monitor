@@ -314,16 +314,31 @@ void Window::renderProcessTable() {
                 ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(255, 100, 100, 100));
             }
             
+            // Process Name
             ImGui::TableNextColumn();
-            ImGui::TextUnformatted(wstring_to_utf8(process.name).c_str());
-            if (process.isHighUsage) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), " (!)");;
+            std::string label = wstring_to_utf8(process.name) + "##" + std::to_string(process.pid);
+            bool selected = ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+            
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Process: %s", wstring_to_utf8(process.name).c_str());
+                ImGui::Text("Path: %s", wstring_to_utf8(monitor.getProcessPath(process.pid)).c_str());
+                ImGui::Text("Priority: %s", getPriorityString(process.priority).c_str());
+                if (monitor.isProcessElevated(process.pid)) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.0f, 1.0f), "Running with elevated privileges");
+                }
+                ImGui::EndTooltip();
+            }
+
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+                ImGui::OpenPopup(("ProcessContextMenu_" + std::to_string(process.pid)).c_str());
             }
             
+            // PID
             ImGui::TableNextColumn();
             ImGui::Text("%u", process.pid);
             
+            // CPU Usage
             ImGui::TableNextColumn();
             ImGui::Text("%.1f%%", process.cpuUsage);
             if (ImGui::IsItemHovered()) {
@@ -336,9 +351,9 @@ void Window::renderProcessTable() {
                 ImGui::EndTooltip();
             }
             
+            // Memory Usage
             ImGui::TableNextColumn();
             ImGui::Text("%s", formatMemorySize(process.memoryUsage).c_str());
-
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::Text("Memory: %s", formatMemorySize(process.memoryUsage).c_str());
@@ -346,14 +361,67 @@ void Window::renderProcessTable() {
                     ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 
                         "High memory usage detected!");
                 }
-                ImGui::Text("Right-click for options");
                 ImGui::EndTooltip();
             }
 
-            if (ImGui::BeginPopupContextItem(std::format("process_context_{}", process.pid).c_str())) {
-                if (ImGui::MenuItem("Terminate Process")) {
-                    monitor.terminateProcess(process.pid);
+            // Context Menu
+            if (ImGui::BeginPopup(("ProcessContextMenu_" + std::to_string(process.pid)).c_str())) {
+                bool canModify = monitor.canModifyProcess(process.pid);
+                
+                ImGui::Text("%s (PID: %u)", wstring_to_utf8(process.name).c_str(), process.pid);
+                ImGui::Separator();
+                
+                if (ImGui::MenuItem("Terminate Process", nullptr, false, canModify)) {
+                    if (showConfirmationDialog("Terminate Process", 
+                        std::format("Are you sure you want to terminate {}?", 
+                        wstring_to_utf8(process.name)))) {
+                        if (!monitor.terminateProcess(process.pid)) {
+                            showErrorDialog("Failed to terminate process. Make sure you have sufficient privileges.");
+                        }
+                    }
                 }
+
+                if (ImGui::BeginMenu("Set Priority", canModify)) {
+                    if (ImGui::MenuItem("Real Time", nullptr, process.priority == REALTIME_PRIORITY_CLASS)) {
+                        monitor.setPriority(process.pid, ProcessMonitor::Priority::RealTime);
+                    }
+                    if (ImGui::MenuItem("High", nullptr, process.priority == HIGH_PRIORITY_CLASS)) {
+                        monitor.setPriority(process.pid, ProcessMonitor::Priority::High);
+                    }
+                    if (ImGui::MenuItem("Above Normal", nullptr, process.priority == ABOVE_NORMAL_PRIORITY_CLASS)) {
+                        monitor.setPriority(process.pid, ProcessMonitor::Priority::AboveNormal);
+                    }
+                    if (ImGui::MenuItem("Normal", nullptr, process.priority == NORMAL_PRIORITY_CLASS)) {
+                        monitor.setPriority(process.pid, ProcessMonitor::Priority::Normal);
+                    }
+                    if (ImGui::MenuItem("Below Normal", nullptr, process.priority == BELOW_NORMAL_PRIORITY_CLASS)) {
+                        monitor.setPriority(process.pid, ProcessMonitor::Priority::BelowNormal);
+                    }
+                    if (ImGui::MenuItem("Idle", nullptr, process.priority == IDLE_PRIORITY_CLASS)) {
+                        monitor.setPriority(process.pid, ProcessMonitor::Priority::Idle);
+                    }
+                    ImGui::EndMenu();
+                }
+
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Suspend", nullptr, false, canModify)) {
+                    if (!monitor.suspendProcess(process.pid)) {
+                        showErrorDialog("Failed to suspend process. Make sure you have sufficient privileges.");
+                    }
+                }
+                if (ImGui::MenuItem("Resume", nullptr, false, canModify)) {
+                    if (!monitor.resumeProcess(process.pid)) {
+                        showErrorDialog("Failed to resume process. Make sure you have sufficient privileges.");
+                    }
+                }
+
+                if (!canModify) {
+                    ImGui::Separator();
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 
+                        "Insufficient privileges to modify this process");
+                }
+
                 ImGui::EndPopup();
             }
         }
@@ -371,5 +439,51 @@ void Window::renderProcessTable() {
         }
 
         ImGui::EndTable();
+    }
+}
+
+std::string Window::getPriorityString(int priority) {
+    switch (priority) {
+        case REALTIME_PRIORITY_CLASS: return "Real Time";
+        case HIGH_PRIORITY_CLASS: return "High";
+        case ABOVE_NORMAL_PRIORITY_CLASS: return "Above Normal";
+        case NORMAL_PRIORITY_CLASS: return "Normal";
+        case BELOW_NORMAL_PRIORITY_CLASS: return "Below Normal";
+        case IDLE_PRIORITY_CLASS: return "Idle";
+        default: return "Unknown";
+    }
+}
+
+bool Window::showConfirmationDialog(const std::string& title, const std::string& message) {
+    bool confirmed = false;
+    ImGui::OpenPopup(title.c_str());
+    
+    if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", message.c_str());
+        ImGui::Separator();
+        
+        if (ImGui::Button("Yes", ImVec2(120, 0))) {
+            confirmed = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("No", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    
+    return confirmed;
+}
+
+void Window::showErrorDialog(const std::string& message) {
+    ImGui::OpenPopup("Error");
+    if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", message.c_str());
+        ImGui::Separator();
+        if (ImGui::Button("OK", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 } 
