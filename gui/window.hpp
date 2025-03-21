@@ -20,8 +20,8 @@ private:
 
     // Sorting state
     struct {
-        int columnIndex = -1;
-        bool ascending = true;
+        int columnIndex = 2;  // CPU usage column
+        bool ascending = false;  // Descending order
     } sortState;
 
     void renderProcessTable();
