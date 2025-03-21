@@ -17,4 +17,13 @@ private:
     int height;
     ProcessMonitor& monitor;
     GLFWwindow* window;
+
+    // Sorting state
+    struct {
+        int columnIndex = -1;
+        bool ascending = true;
+    } sortState;
+
+    void renderProcessTable();
+    void sortProcessList(std::vector<ProcessInfo>& processes);
 }; 

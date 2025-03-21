@@ -149,6 +149,23 @@ void ProcessMonitor::updateProcessInfo(ProcessInfo& info) {
         info.memoryUsage = static_cast<double>(pmc.WorkingSetSize) / (1024 * 1024); // Convert to MB
     }
 
+    // Check for high resource usage
+    bool isHighCpu = info.cpuUsage > cpuAlertThreshold;
+    bool isHighMemory = info.memoryUsage > memoryAlertThreshold;
+    
+    if (isHighCpu || isHighMemory) {
+        info.highUsageCount++;
+        if (info.highUsageCount >= alertTriggerCount && !info.alertTriggered) {
+            info.isHighUsage = true;
+            info.lastHighUsageTime = std::chrono::system_clock::now();
+            info.alertTriggered = true;
+        }
+    } else {
+        info.highUsageCount = 0;
+        info.isHighUsage = false;
+        info.alertTriggered = false;
+    }
+
     CloseHandle(processHandle);
 }
 
@@ -169,10 +186,10 @@ double ProcessMonitor::calculateCpuUsage(const ProcessInfo& info) {
     if (timeDiff == 0) return 0.0;
 
     // Convert from 100-nanosecond intervals to percentage
-    // Multiply by 100 for percentage and divide by number of processors
+    // Divide by number of processors to get correct percentage
     double cpuUsage = (totalDiff * 100.0) / (timeDiff * numProcessors);
     
-    // Clamp the value between 0 and 100
+    // Clamp the value between 0 and 100 to match Task Manager's behavior
     return std::clamp(cpuUsage, 0.0, 100.0);
 }
 
@@ -204,13 +221,16 @@ void ProcessMonitor::updateTotalCpuUsage() {
     ULONGLONG kernelDiff = currentKernel.QuadPart - lastKernel.QuadPart;
     ULONGLONG userDiff = currentUser.QuadPart - lastUser.QuadPart;
     ULONGLONG totalDiff = kernelDiff + userDiff;
+    ULONGLONG activeDiff = totalDiff - idleDiff;
 
     if (totalDiff > 0) {
-        totalCpuUsage = ((totalDiff - idleDiff) * 100.0) / totalDiff;
+        // Calculate total CPU usage across all cores
+        totalCpuUsage = (activeDiff * 100.0) / totalDiff;
     } else {
         totalCpuUsage = 0.0;
     }
 
+    // Update stored times for next calculation
     lastIdleTime = idleTime;
     lastKernelTime = kernelTime;
     lastUserTime = userTime;
@@ -219,7 +239,6 @@ void ProcessMonitor::updateTotalCpuUsage() {
     MEMORYSTATUSEX memInfo;
     memInfo.dwLength = sizeof(MEMORYSTATUSEX);
     if (GlobalMemoryStatusEx(&memInfo)) {
-        // Convert memory load to percentage
         totalMemoryUsage = static_cast<double>(memInfo.dwMemoryLoad);
     }
 }
@@ -257,8 +276,12 @@ void ProcessMonitor::terminateProcess(unsigned long pid) {
 std::vector<ProcessInfo> ProcessMonitor::getHighUsageProcesses() const {
     std::vector<ProcessInfo> highUsageProcesses;
     for (const auto& process : processes) {
-        if (process.cpuUsage > usageThreshold || process.memoryUsage > usageThreshold) {
-            highUsageProcesses.push_back(process);
+        if (process.isHighUsage) {
+            // Check if the alert timeout has passed
+            auto now = std::chrono::system_clock::now();
+            if (now - process.lastHighUsageTime < alertTimeout) {
+                highUsageProcesses.push_back(process);
+            }
         }
     }
     return highUsageProcesses;

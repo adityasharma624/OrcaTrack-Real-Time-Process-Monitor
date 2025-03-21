@@ -14,6 +14,8 @@ struct ProcessInfo {
     double memoryUsage;
     bool isHighUsage;
     std::chrono::system_clock::time_point lastHighUsageTime;
+    bool alertTriggered;  // New field to track if alert has been shown
+    int highUsageCount;   // New field to count consecutive high usage readings
     
     // CPU usage tracking
     FILETIME lastKernelTime;
@@ -42,6 +44,11 @@ public:
     // Alert settings
     void setUsageThreshold(double threshold) { usageThreshold = threshold; }
     void setAlertTimeout(std::chrono::seconds timeout) { alertTimeout = timeout; }
+    void setHighUsageThresholds(double cpu, double mem) { 
+        cpuAlertThreshold = cpu; 
+        memoryAlertThreshold = mem; 
+    }
+    void setAlertTriggerCount(int count) { alertTriggerCount = count; }
     std::vector<ProcessInfo> getHighUsageProcesses() const;
 
 private:
@@ -59,6 +66,11 @@ private:
     double totalCpuUsage;
     double totalMemoryUsage;
     int numProcessors;
+    
+    // New alert thresholds
+    double cpuAlertThreshold = 90.0;    // Alert if CPU > 90%
+    double memoryAlertThreshold = 1024.0; // Alert if Memory > 1GB
+    int alertTriggerCount = 5;           // Alert after 5 consecutive high readings
     
     // System time tracking
     FILETIME lastIdleTime;
