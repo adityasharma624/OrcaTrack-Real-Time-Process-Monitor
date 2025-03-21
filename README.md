@@ -64,8 +64,14 @@ The executable will be created at `build/Debug/orca_track.exe`
 
 ## License
 
-[Your chosen license]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Version History
 
-- v0.1.0-alpha: Initial release with basic process monitoring and resource tracking 
+- v0.1.0-alpha: Initial release with basic process monitoring and resource tracking
+
+## Acknowledgments
+
+- [Dear ImGui](https://github.com/ocornut/imgui) for the amazing GUI library
+- [GLFW](https://www.glfw.org/) for window management
+- All contributors who have helped with this project 
