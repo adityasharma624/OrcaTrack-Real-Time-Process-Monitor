@@ -154,6 +154,7 @@ private:
     HANDLE openProcessWithPrivileges(unsigned long pid, DWORD access) const;
     bool adjustProcessPrivileges();
     bool hasProcessPrivileges() const;
+    bool isElevated() const;
 
     // New helper functions for grouping
     void updateProcessGroupInfo(ProcessInfo& info);

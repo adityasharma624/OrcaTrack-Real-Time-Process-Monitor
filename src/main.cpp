@@ -2,6 +2,24 @@
 #include "../monitor/process_monitor.hpp"
 #include <iostream>
 #include <stdexcept>
+#include <windows.h>
+#include <shellapi.h>
+
+bool isElevated() {
+    BOOL elevated = FALSE;
+    HANDLE hToken = NULL;
+    
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION elevation;
+        DWORD size = sizeof(TOKEN_ELEVATION);
+        
+        if (GetTokenInformation(hToken, TokenElevation, &elevation, sizeof(elevation), &size)) {
+            elevated = elevation.TokenIsElevated;
+        }
+        CloseHandle(hToken);
+    }
+    return elevated;
+}
 
 int main(int argc, char* argv[]) {
     try {

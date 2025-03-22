@@ -1,8 +1,13 @@
 #pragma once
+#include "../monitor/process_monitor.hpp"
 #include <string>
 #include <memory>
 #include <GLFW/glfw3.h>
-#include "../monitor/process_monitor.hpp"
+#include <vector>
+#include <unordered_map>
+#include <imgui.h>
+
+struct GLFWwindow;
 
 class Window {
 public:
@@ -10,8 +15,19 @@ public:
     ~Window();
 
     void run();
+    void toggleGroupSelector();
+    void setCurrentGroup(ProcessGroup group);
 
 private:
+    void handleEvents();
+    void update();
+    void render();
+    void renderProcessTable();
+    void renderGroupSelector();
+    void renderCategoryCounts();
+    void renderHeader();
+    void renderFooter();
+
     std::string title;
     int width;
     int height;
@@ -22,16 +38,12 @@ private:
 
     // Sorting state
     struct {
-        int columnIndex = 2;  // CPU usage column
-        bool ascending = false;  // Descending order
+        int columnIndex = -1;
+        bool ascending = true;
     } sortState;
 
-    void renderProcessTable();
-    void renderGroupSelector();
     std::string getGroupName(ProcessGroup group) const;
     void sortProcessList(std::vector<ProcessInfo>& processes);
-    
-    // Helper functions for process management
     std::string getPriorityString(int priority);
     bool showConfirmationDialog(const std::string& title, const std::string& message);
     void showErrorDialog(const std::string& message);

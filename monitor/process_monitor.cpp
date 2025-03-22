@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <winnt.h>
 #include <winsvc.h>
+#include <iostream>
 
 // NT Status definitions
 #ifndef NT_SUCCESS
@@ -191,7 +192,8 @@ void ProcessMonitor::updateProcessGroupInfo(ProcessInfo& info) {
     // Check if process is system process
     info.isSystemProcess = (info.pid < 1000) || 
                           (info.name.find(L"System") != std::wstring::npos) ||
-                          (info.name.find(L"Registry") != std::wstring::npos);
+                          (info.name.find(L"Registry") != std::wstring::npos) ||
+                          isSystemService(info.name);
 
     // Check if process is a service
     info.isService = isProcessService(info.pid);
@@ -352,12 +354,89 @@ bool ProcessMonitor::hasProcessPrivileges() const {
 }
 
 bool ProcessMonitor::terminateProcess(unsigned long pid) {
-    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_TERMINATE);
-    if (!hProcess) {
+    // Special case: if trying to terminate our own process
+    if (pid == GetCurrentProcessId()) {
+        PostQuitMessage(1);
+        return true;
+    }
+
+    // First check if the process exists
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        std::cerr << "Failed to create process snapshot. Error code: " << GetLastError() << std::endl;
         return false;
     }
 
+    PROCESSENTRY32W processEntry;
+    processEntry.dwSize = sizeof(processEntry);
+
+    bool processExists = false;
+    if (Process32FirstW(snapshot, &processEntry)) {
+        do {
+            if (processEntry.th32ProcessID == pid) {
+                processExists = true;
+                break;
+            }
+        } while (Process32NextW(snapshot, &processEntry));
+    }
+
+    CloseHandle(snapshot);
+
+    if (!processExists) {
+        std::cerr << "Process " << pid << " does not exist" << std::endl;
+        return false;
+    }
+
+    // Try to open the process first without requesting elevation
+    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (!hProcess) {
+        DWORD error = GetLastError();
+        if (error == ERROR_ACCESS_DENIED && !isElevated()) {
+            // We need elevation - relaunch with elevated privileges
+            SHELLEXECUTEINFOW sei = { sizeof(sei) };
+            sei.lpVerb = L"runas";
+            
+            // Get current executable path
+            wchar_t path[MAX_PATH];
+            DWORD length = GetModuleFileNameW(NULL, path, MAX_PATH);
+            if (length == 0) {
+                std::cerr << "Failed to get executable path. Error code: " << GetLastError() << std::endl;
+                return false;
+            }
+            
+            sei.lpFile = path;
+            sei.hwnd = NULL;
+            sei.nShow = SW_NORMAL;
+            
+            if (ShellExecuteExW(&sei)) {
+                // Successfully relaunched with elevation
+                return true;
+            }
+            std::cerr << "Failed to elevate privileges. Error code: " << GetLastError() << std::endl;
+            return false;
+        }
+        std::cerr << "Failed to open process " << pid << " for termination. Error code: " << error << std::endl;
+        return false;
+    }
+
+    // Try to terminate the process
     bool result = TerminateProcess(hProcess, 1) != 0;
+    if (!result) {
+        DWORD error = GetLastError();
+        std::cerr << "Failed to terminate process " << pid << ". Error code: " << error << std::endl;
+    }
+    
+    // Wait for the process to actually terminate
+    if (result) {
+        DWORD waitResult = WaitForSingleObject(hProcess, 1000); // Wait up to 1 second
+        if (waitResult == WAIT_TIMEOUT) {
+            std::cerr << "Process " << pid << " did not terminate within 1 second" << std::endl;
+        } else if (waitResult == WAIT_FAILED) {
+            DWORD error = GetLastError();
+            std::cerr << "Error waiting for process " << pid << " to terminate. Error code: " << error << std::endl;
+        }
+    }
+    
     CloseHandle(hProcess);
     return result;
 }
@@ -518,7 +597,14 @@ std::vector<ProcessInfo> ProcessMonitor::getProcessesByGroup(ProcessGroup group)
                 shouldInclude = process.isSystemProcess;
                 break;
             case ProcessGroup::UserApplications:
-                shouldInclude = !process.isSystemProcess && !process.isService;
+                shouldInclude = !process.isSystemProcess && 
+                              !process.isService && 
+                              !isSystemService(process.name) &&
+                              !isBackgroundTask(process.name) &&
+                              process.name != L"svchost.exe" &&
+                              process.name != L"RuntimeBroker.exe" &&
+                              process.name != L"dllhost.exe" &&
+                              process.name != L"conhost.exe";
                 break;
             case ProcessGroup::BackgroundServices:
                 shouldInclude = process.isService && !process.isSystemProcess;
@@ -785,4 +871,20 @@ bool ProcessMonitor::isProcessService(unsigned long pid) const {
     CloseHandle(hToken);
     CloseHandle(hProcess);
     return isService;
+}
+
+bool ProcessMonitor::isElevated() const {
+    BOOL elevated = FALSE;
+    HANDLE hToken = NULL;
+    
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        TOKEN_ELEVATION elevation;
+        DWORD size = sizeof(TOKEN_ELEVATION);
+        
+        if (GetTokenInformation(hToken, TokenElevation, &elevation, sizeof(elevation), &size)) {
+            elevated = elevation.TokenIsElevated;
+        }
+        CloseHandle(hToken);
+    }
+    return elevated;
 } 

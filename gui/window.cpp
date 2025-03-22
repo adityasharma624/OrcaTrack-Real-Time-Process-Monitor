@@ -29,8 +29,8 @@ namespace {
 
 Window::Window(const std::string& title, int width, int height, ProcessMonitor& monitor)
     : title(title)
-    , width(width * 2)
-    , height(height + 50)
+    , width(width)
+    , height(height)
     , monitor(monitor)
     , showGroupSelector(false)
     , currentGroup(ProcessGroup::Default)
@@ -40,10 +40,13 @@ Window::Window(const std::string& title, int width, int height, ProcessMonitor& 
         throw std::runtime_error("Failed to initialize GLFW");
     }
 
+    // Configure GLFW
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
+    // Create window
     window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!window) {
         glfwTerminate();
@@ -53,12 +56,29 @@ Window::Window(const std::string& title, int width, int height, ProcessMonitor& 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
 
+    // Initialize ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    
+    // Set up ImGui style
     ImGui::StyleColorsDark();
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 0.0f;
+    style.FrameRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.ScrollbarRounding = 4.0f;
+    style.FramePadding = ImVec2(8, 4);
+    style.ItemSpacing = ImVec2(8, 4);
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
+
+    // Set up window resize callback
+    glfwSetWindowSizeCallback(window, [](GLFWwindow* window, int width, int height) {
+        glViewport(0, 0, width, height);
+    });
 }
 
 Window::~Window() {
@@ -75,74 +95,34 @@ Window::~Window() {
 void Window::run() {
     using namespace std::chrono_literals;
     auto lastUpdateTime = std::chrono::steady_clock::now();
-    const auto updateInterval = 1000ms; // Update every 1 second
-
-    // Initialization phase
-    {
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        // Show initialization message
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
-        ImGui::Begin("Initializing", nullptr, 
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-        
-        ImGui::SetCursorPos(ImVec2(width/2 - 100, height/2 - 40));
-        ImGui::Text("Initializing Process Monitor...");
-        ImGui::SetCursorPos(ImVec2(width/2 - 150, height/2));
-        ImGui::Text("Gathering initial system performance data...");
-        
-        ImGui::End();
-        ImGui::Render();
-        
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
-        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(window);
-
-        // Take initial measurements
-        monitor.update();
-        std::this_thread::sleep_for(1000ms);
-        monitor.update();
-    }
+    const auto updateInterval = 1000ms;
 
     while (!glfwWindowShouldClose(window)) {
-        auto currentTime = std::chrono::steady_clock::now();
-        auto timeSinceLastUpdate = currentTime - lastUpdateTime;
-
         glfwPollEvents();
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        if (timeSinceLastUpdate >= updateInterval) {
+        auto currentTime = std::chrono::steady_clock::now();
+        if (currentTime - lastUpdateTime >= updateInterval) {
             monitor.update();
             lastUpdateTime = currentTime;
         }
 
+        // Get current window size
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+
         // Create the main window
         ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
+        ImGui::SetNextWindowSize(ImVec2(static_cast<float>(display_w), static_cast<float>(display_h)));
         ImGui::Begin("Process Monitor", nullptr, 
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | 
+            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoTitleBar);
 
         // System usage section
         ImGui::Text("System Usage");
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("Real-time system resource utilization");
-            ImGui::BulletText("Updates every second");
-            ImGui::BulletText("Monitors CPU and Memory usage");
-            ImGui::BulletText("First few seconds may show higher values");
-            ImGui::BulletText("while baseline measurements stabilize");
-            ImGui::EndTooltip();
-        }
         ImGui::Separator();
 
         float cpuUsage = static_cast<float>(monitor.getTotalCpuUsage());
@@ -151,51 +131,22 @@ void Window::run() {
 
         ImGui::ProgressBar(cpuUsage / 100.0f, ImVec2(-1, 0), 
             std::format("CPU Usage: {:.1f}%", cpuUsage).c_str());
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("Total System CPU Usage: %.1f%%", cpuUsage);
-            ImGui::Text("This includes:");
-            ImGui::BulletText("All visible processes below");
-            ImGui::BulletText("System processes & services");
-            ImGui::BulletText("Background tasks & drivers");
-            ImGui::BulletText("Kernel operations & interrupts");
-            ImGui::EndTooltip();
-        }
         ImGui::ProgressBar(memoryUsage / 100.0f, ImVec2(-1, 0), 
-            (std::to_string(static_cast<int>(memoryUsage)) + "%% (" + 
-             std::to_string(static_cast<int>(totalMemory / (1024.0 * 1024.0 * 1024.0))) + " GB available)").c_str());
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("Memory Usage Statistics:");
-            ImGui::BulletText("Used: %.1f%%", memoryUsage);
-            ImGui::BulletText("Available: %d GB", static_cast<int>(totalMemory / (1024.0 * 1024.0 * 1024.0)));
-            ImGui::BulletText("Includes cached files and standby memory");
-            ImGui::EndTooltip();
-        }
+            std::format("Memory Consumption: {:.1f}% ({:.1f} GB available)", 
+                memoryUsage, 
+                static_cast<float>(totalMemory) / (1024.0f * 1024.0f * 1024.0f)).c_str());
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
 
         // Process list
-        ImGui::Text("Processes");
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("Active Process List");
-            ImGui::BulletText("Click column headers to sort");
-            ImGui::BulletText("Shows processes using >0.01%% CPU or >1MB memory");
-            ImGui::BulletText("Right-click process for more options");
-            ImGui::EndTooltip();
-        }
-        ImGui::Separator();
-
         renderProcessTable();
 
         ImGui::End();
 
+        // Render ImGui
         ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
         glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -385,6 +336,11 @@ void Window::renderProcessTable() {
                         wstring_to_utf8(process.name)))) {
                         if (!monitor.terminateProcess(process.pid)) {
                             showErrorDialog("Failed to terminate process. Make sure you have sufficient privileges.");
+                        } else {
+                            // Process was terminated successfully
+                            ImGui::CloseCurrentPopup();
+                            // Force an immediate update to refresh the process list
+                            monitor.update();
                         }
                     }
                 }
@@ -451,7 +407,7 @@ void Window::renderProcessTable() {
 }
 
 void Window::renderGroupSelector() {
-    ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(500, 200), ImGuiCond_Always);
     ImGui::Begin("Group Selector", &showGroupSelector);
     
     auto groupCounts = monitor.getProcessGroupCounts();
