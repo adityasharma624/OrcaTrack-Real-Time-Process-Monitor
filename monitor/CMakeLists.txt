@@ -10,5 +10,7 @@ if(WIN32)
     target_link_libraries(monitor_lib PRIVATE
         pdh.lib
         psapi.lib
+        version.lib
+        advapi32.lib
     )
 endif() 

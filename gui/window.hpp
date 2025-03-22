@@ -16,6 +16,8 @@ private:
     int width;
     int height;
     ProcessMonitor& monitor;
+    bool showGroupSelector;
+    ProcessGroup currentGroup;
     GLFWwindow* window;
 
     // Sorting state
@@ -25,6 +27,8 @@ private:
     } sortState;
 
     void renderProcessTable();
+    void renderGroupSelector();
+    std::string getGroupName(ProcessGroup group) const;
     void sortProcessList(std::vector<ProcessInfo>& processes);
     
     // Helper functions for process management

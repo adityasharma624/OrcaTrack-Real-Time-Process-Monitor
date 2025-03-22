@@ -29,9 +29,11 @@ namespace {
 
 Window::Window(const std::string& title, int width, int height, ProcessMonitor& monitor)
     : title(title)
-    , width(width)
-    , height(height)
+    , width(width * 2)
+    , height(height + 50)
     , monitor(monitor)
+    , showGroupSelector(false)
+    , currentGroup(ProcessGroup::Default)
     , window(nullptr)
 {
     if (!glfwInit()) {
@@ -226,18 +228,13 @@ void Window::sortProcessList(std::vector<ProcessInfo>& processes) {
 }
 
 void Window::renderProcessTable() {
-    // Get processes and filter them
-    auto processes = monitor.getProcesses();
-    std::vector<ProcessInfo> activeProcesses;
-    activeProcesses.reserve(processes.size());
+    // Get processes for current group
+    auto processes = monitor.getProcessesByGroup(currentGroup);
     
     // Calculate total CPU usage from processes
     double totalProcessCpuUsage = 0.0;
     for (const auto& process : processes) {
-        if (process.cpuUsage > 0.01 || process.memoryUsage > 1.0) {
-            activeProcesses.push_back(process);
-            totalProcessCpuUsage += process.cpuUsage;
-        }
+        totalProcessCpuUsage += process.cpuUsage;
     }
 
     // Create table with sorting capabilities
@@ -248,6 +245,17 @@ void Window::renderProcessTable() {
         ImGuiTableFlags_BordersOuter | 
         ImGuiTableFlags_BordersV |
         ImGuiTableFlags_ScrollY;
+
+    // Add group selector button
+    if (ImGui::Button("Select Group")) {
+        showGroupSelector = !showGroupSelector;
+    }
+    ImGui::SameLine();
+    ImGui::Text("Current Group: %s", getGroupName(currentGroup).c_str());
+
+    if (showGroupSelector) {
+        renderGroupSelector();
+    }
 
     if (ImGui::BeginTable("ProcessTable", 4, flags)) {
         // Setup columns
@@ -303,10 +311,10 @@ void Window::renderProcessTable() {
         }
 
         // Apply current sort
-        sortProcessList(activeProcesses);
+        sortProcessList(processes);
 
         // Display table contents
-        for (const auto& process : activeProcesses) {
+        for (const auto& process : processes) {
             ImGui::TableNextRow();
             
             // Set row background color for high usage processes
@@ -439,6 +447,225 @@ void Window::renderProcessTable() {
         }
 
         ImGui::EndTable();
+    }
+}
+
+void Window::renderGroupSelector() {
+    ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Group Selector", &showGroupSelector);
+    
+    auto groupCounts = monitor.getProcessGroupCounts();
+
+    // Add "Default" option at the top
+    if (ImGui::Selectable("All Processes", currentGroup == ProcessGroup::Default)) {
+        currentGroup = ProcessGroup::Default;
+    }
+    ImGui::SameLine();
+    ImGui::Text("(%zu)", groupCounts[ProcessGroup::Default]);
+    ImGui::Separator();
+
+    // Add padding to ensure tab labels are fully visible
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 4));
+    if (ImGui::BeginTabBar("GroupTabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
+        if (ImGui::BeginTabItem("Process Type")) {
+            ImGui::Spacing();
+            if (ImGui::Selectable("System Processes", currentGroup == ProcessGroup::SystemProcesses)) {
+                currentGroup = ProcessGroup::SystemProcesses;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::SystemProcesses]);
+
+            if (ImGui::Selectable("User Applications", currentGroup == ProcessGroup::UserApplications)) {
+                currentGroup = ProcessGroup::UserApplications;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::UserApplications]);
+
+            if (ImGui::Selectable("Background Services", currentGroup == ProcessGroup::BackgroundServices)) {
+                currentGroup = ProcessGroup::BackgroundServices;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::BackgroundServices]);
+
+            if (ImGui::Selectable("Windows Services", currentGroup == ProcessGroup::WindowsServices)) {
+                currentGroup = ProcessGroup::WindowsServices;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::WindowsServices]);
+
+            if (ImGui::Selectable("System Drivers", currentGroup == ProcessGroup::SystemDrivers)) {
+                currentGroup = ProcessGroup::SystemDrivers;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::SystemDrivers]);
+
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Resource Usage")) {
+            ImGui::Spacing();
+            if (ImGui::Selectable("High CPU Usage", currentGroup == ProcessGroup::HighCpuUsage)) {
+                currentGroup = ProcessGroup::HighCpuUsage;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::HighCpuUsage]);
+
+            if (ImGui::Selectable("High Memory Usage", currentGroup == ProcessGroup::HighMemoryUsage)) {
+                currentGroup = ProcessGroup::HighMemoryUsage;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::HighMemoryUsage]);
+
+            if (ImGui::Selectable("Low Resource Usage", currentGroup == ProcessGroup::LowResourceUsage)) {
+                currentGroup = ProcessGroup::LowResourceUsage;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::LowResourceUsage]);
+
+            if (ImGui::Selectable("Normal Resource Usage", currentGroup == ProcessGroup::NormalResourceUsage)) {
+                currentGroup = ProcessGroup::NormalResourceUsage;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::NormalResourceUsage]);
+
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Priority")) {
+            ImGui::Spacing();
+            if (ImGui::Selectable("Real-time Priority", currentGroup == ProcessGroup::RealTimePriority)) {
+                currentGroup = ProcessGroup::RealTimePriority;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::RealTimePriority]);
+
+            if (ImGui::Selectable("High Priority", currentGroup == ProcessGroup::HighPriority)) {
+                currentGroup = ProcessGroup::HighPriority;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::HighPriority]);
+
+            if (ImGui::Selectable("Above Normal", currentGroup == ProcessGroup::AboveNormalPriority)) {
+                currentGroup = ProcessGroup::AboveNormalPriority;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::AboveNormalPriority]);
+
+            if (ImGui::Selectable("Normal Priority", currentGroup == ProcessGroup::NormalPriority)) {
+                currentGroup = ProcessGroup::NormalPriority;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::NormalPriority]);
+
+            if (ImGui::Selectable("Below Normal", currentGroup == ProcessGroup::BelowNormalPriority)) {
+                currentGroup = ProcessGroup::BelowNormalPriority;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::BelowNormalPriority]);
+
+            if (ImGui::Selectable("Idle Priority", currentGroup == ProcessGroup::IdlePriority)) {
+                currentGroup = ProcessGroup::IdlePriority;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::IdlePriority]);
+
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Status")) {
+            ImGui::Spacing();
+            if (ImGui::Selectable("Running", currentGroup == ProcessGroup::Running)) {
+                currentGroup = ProcessGroup::Running;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::Running]);
+
+            if (ImGui::Selectable("Suspended", currentGroup == ProcessGroup::Suspended)) {
+                currentGroup = ProcessGroup::Suspended;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::Suspended]);
+
+            if (ImGui::Selectable("Elevated", currentGroup == ProcessGroup::Elevated)) {
+                currentGroup = ProcessGroup::Elevated;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::Elevated]);
+
+            if (ImGui::Selectable("System Protected", currentGroup == ProcessGroup::SystemProtected)) {
+                currentGroup = ProcessGroup::SystemProtected;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::SystemProtected]);
+
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Category")) {
+            ImGui::Spacing();
+            if (ImGui::Selectable("Microsoft Processes", currentGroup == ProcessGroup::MicrosoftProcesses)) {
+                currentGroup = ProcessGroup::MicrosoftProcesses;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::MicrosoftProcesses]);
+
+            if (ImGui::Selectable("Third-party Applications", currentGroup == ProcessGroup::ThirdPartyApplications)) {
+                currentGroup = ProcessGroup::ThirdPartyApplications;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::ThirdPartyApplications]);
+
+            if (ImGui::Selectable("Development Tools", currentGroup == ProcessGroup::DevelopmentTools)) {
+                currentGroup = ProcessGroup::DevelopmentTools;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::DevelopmentTools]);
+
+            if (ImGui::Selectable("System Services", currentGroup == ProcessGroup::SystemServices)) {
+                currentGroup = ProcessGroup::SystemServices;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::SystemServices]);
+
+            if (ImGui::Selectable("Background Tasks", currentGroup == ProcessGroup::BackgroundTasks)) {
+                currentGroup = ProcessGroup::BackgroundTasks;
+            }
+            ImGui::SameLine();
+            ImGui::Text("(%zu)", groupCounts[ProcessGroup::BackgroundTasks]);
+
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::PopStyleVar();
+
+    ImGui::End();
+}
+
+std::string Window::getGroupName(ProcessGroup group) const {
+    switch (group) {
+        case ProcessGroup::Default: return "All Processes";
+        case ProcessGroup::SystemProcesses: return "System Processes";
+        case ProcessGroup::UserApplications: return "User Applications";
+        case ProcessGroup::BackgroundServices: return "Background Services";
+        case ProcessGroup::WindowsServices: return "Windows Services";
+        case ProcessGroup::SystemDrivers: return "System Drivers";
+        case ProcessGroup::HighCpuUsage: return "High CPU Usage";
+        case ProcessGroup::HighMemoryUsage: return "High Memory Usage";
+        case ProcessGroup::LowResourceUsage: return "Low Resource Usage";
+        case ProcessGroup::NormalResourceUsage: return "Normal Resource Usage";
+        case ProcessGroup::RealTimePriority: return "Real-time Priority";
+        case ProcessGroup::HighPriority: return "High Priority";
+        case ProcessGroup::AboveNormalPriority: return "Above Normal Priority";
+        case ProcessGroup::NormalPriority: return "Normal Priority";
+        case ProcessGroup::BelowNormalPriority: return "Below Normal Priority";
+        case ProcessGroup::IdlePriority: return "Idle Priority";
+        case ProcessGroup::Running: return "Running";
+        case ProcessGroup::Suspended: return "Suspended";
+        case ProcessGroup::Elevated: return "Elevated";
+        case ProcessGroup::SystemProtected: return "System Protected";
+        case ProcessGroup::MicrosoftProcesses: return "Microsoft Processes";
+        case ProcessGroup::ThirdPartyApplications: return "Third-party Applications";
+        case ProcessGroup::DevelopmentTools: return "Development Tools";
+        case ProcessGroup::SystemServices: return "System Services";
+        case ProcessGroup::BackgroundTasks: return "Background Tasks";
+        default: return "Unknown Group";
     }
 }
 

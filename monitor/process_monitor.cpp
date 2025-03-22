@@ -7,6 +7,8 @@
 #include <tlhelp32.h>
 #include <sstream>
 #include <iomanip>
+#include <winnt.h>
+#include <winsvc.h>
 
 // NT Status definitions
 #ifndef NT_SUCCESS
@@ -116,8 +118,11 @@ void ProcessMonitor::updateProcessInfo(ProcessInfo& info) {
     // Get process priority
     info.priority = GetPriorityClass(processHandle);
     if (info.priority == 0) {
-        info.priority = NORMAL_PRIORITY_CLASS; // Default to normal if can't get priority
+        info.priority = NORMAL_PRIORITY_CLASS;
     }
+
+    // Update grouping information
+    updateProcessGroupInfo(info);
 
     FILETIME createTime, exitTime, kernelTime, userTime;
     if (GetProcessTimes(processHandle, &createTime, &exitTime, &kernelTime, &userTime)) {
@@ -180,6 +185,25 @@ void ProcessMonitor::updateProcessInfo(ProcessInfo& info) {
     }
 
     CloseHandle(processHandle);
+}
+
+void ProcessMonitor::updateProcessGroupInfo(ProcessInfo& info) {
+    // Check if process is system process
+    info.isSystemProcess = (info.pid < 1000) || 
+                          (info.name.find(L"System") != std::wstring::npos) ||
+                          (info.name.find(L"Registry") != std::wstring::npos);
+
+    // Check if process is a service
+    info.isService = isProcessService(info.pid);
+
+    // Check if process is elevated
+    info.isElevated = isProcessElevated(info.pid);
+
+    // Check if process is suspended
+    info.isSuspended = isProcessSuspended(info.pid);
+
+    // Get company name
+    info.companyName = getProcessCompanyName(info.pid);
 }
 
 double ProcessMonitor::calculateCpuUsage(const ProcessInfo& info) {
@@ -453,8 +477,8 @@ bool ProcessMonitor::isProcessElevated(unsigned long pid) {
     return result && elevation.TokenIsElevated;
 }
 
-bool ProcessMonitor::canModifyProcess(unsigned long pid) {
-    HANDLE hProcess = openProcessWithPrivileges(pid, PROCESS_QUERY_LIMITED_INFORMATION);
+bool ProcessMonitor::canModifyProcess(unsigned long pid) const {
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!hProcess) {
         return false;
     }
@@ -475,4 +499,290 @@ std::vector<ProcessInfo> ProcessMonitor::getHighUsageProcesses() const {
         }
     }
     return highUsageProcesses;
+}
+
+std::vector<ProcessInfo> ProcessMonitor::getProcessesByGroup(ProcessGroup group) const {
+    std::vector<ProcessInfo> groupedProcesses;
+    std::lock_guard<std::mutex> lock(processMutex);
+
+    // If Default group is selected, return all processes
+    if (group == ProcessGroup::Default) {
+        return processes;
+    }
+
+    for (const auto& process : processes) {
+        bool shouldInclude = false;
+
+        switch (group) {
+            case ProcessGroup::SystemProcesses:
+                shouldInclude = process.isSystemProcess;
+                break;
+            case ProcessGroup::UserApplications:
+                shouldInclude = !process.isSystemProcess && !process.isService;
+                break;
+            case ProcessGroup::BackgroundServices:
+                shouldInclude = process.isService && !process.isSystemProcess;
+                break;
+            case ProcessGroup::WindowsServices:
+                shouldInclude = process.isService && process.isSystemProcess;
+                break;
+            case ProcessGroup::SystemDrivers:
+                shouldInclude = process.name.find(L".sys") != std::wstring::npos;
+                break;
+            case ProcessGroup::HighCpuUsage:
+                shouldInclude = process.cpuUsage > 50.0;
+                break;
+            case ProcessGroup::HighMemoryUsage:
+                shouldInclude = process.memoryUsage > 1024.0;
+                break;
+            case ProcessGroup::LowResourceUsage:
+                shouldInclude = process.cpuUsage < 1.0 && process.memoryUsage < 100.0;
+                break;
+            case ProcessGroup::NormalResourceUsage:
+                shouldInclude = process.cpuUsage >= 1.0 && process.cpuUsage <= 50.0 && 
+                              process.memoryUsage >= 100.0 && process.memoryUsage <= 1024.0;
+                break;
+            case ProcessGroup::RealTimePriority:
+                shouldInclude = process.priority == REALTIME_PRIORITY_CLASS;
+                break;
+            case ProcessGroup::HighPriority:
+                shouldInclude = process.priority == HIGH_PRIORITY_CLASS;
+                break;
+            case ProcessGroup::AboveNormalPriority:
+                shouldInclude = process.priority == ABOVE_NORMAL_PRIORITY_CLASS;
+                break;
+            case ProcessGroup::NormalPriority:
+                shouldInclude = process.priority == NORMAL_PRIORITY_CLASS;
+                break;
+            case ProcessGroup::BelowNormalPriority:
+                shouldInclude = process.priority == BELOW_NORMAL_PRIORITY_CLASS;
+                break;
+            case ProcessGroup::IdlePriority:
+                shouldInclude = process.priority == IDLE_PRIORITY_CLASS;
+                break;
+            case ProcessGroup::Running:
+                shouldInclude = !process.isSuspended;
+                break;
+            case ProcessGroup::Suspended:
+                shouldInclude = process.isSuspended;
+                break;
+            case ProcessGroup::Elevated:
+                shouldInclude = process.isElevated;
+                break;
+            case ProcessGroup::SystemProtected:
+                shouldInclude = process.isSystemProcess && !canModifyProcess(process.pid);
+                break;
+            case ProcessGroup::MicrosoftProcesses:
+                shouldInclude = isMicrosoftProcess(process.name);
+                break;
+            case ProcessGroup::ThirdPartyApplications:
+                shouldInclude = !isMicrosoftProcess(process.name) && !process.isSystemProcess;
+                break;
+            case ProcessGroup::DevelopmentTools:
+                shouldInclude = isDevelopmentTool(process.name);
+                break;
+            case ProcessGroup::SystemServices:
+                shouldInclude = isSystemService(process.name);
+                break;
+            case ProcessGroup::BackgroundTasks:
+                shouldInclude = isBackgroundTask(process.name);
+                break;
+        }
+
+        if (shouldInclude) {
+            groupedProcesses.push_back(process);
+        }
+    }
+
+    return groupedProcesses;
+}
+
+std::map<ProcessGroup, size_t> ProcessMonitor::getProcessGroupCounts() const {
+    std::map<ProcessGroup, size_t> counts;
+    for (int i = 0; i < static_cast<int>(ProcessGroup::BackgroundTasks) + 1; i++) {
+        ProcessGroup group = static_cast<ProcessGroup>(i);
+        counts[group] = getProcessesByGroup(group).size();
+    }
+    return counts;
+}
+
+bool ProcessMonitor::isMicrosoftProcess(const std::wstring& name) const {
+    // Common Microsoft process names
+    static const std::vector<std::wstring> microsoftProcesses = {
+        L"explorer.exe", L"svchost.exe", L"RuntimeBroker.exe", L"dwm.exe",
+        L"csrss.exe", L"wininit.exe", L"services.exe", L"lsass.exe",
+        L"winlogon.exe", L"fontdrvhost.exe", L"ctfmon.exe", L"conhost.exe",
+        L"MicrosoftEdge.exe", L"Edge.exe", L"msedge.exe", L"OneDrive.exe",
+        L"Teams.exe", L"Outlook.exe", L"Word.exe", L"Excel.exe"
+    };
+
+    for (const auto& msProcess : microsoftProcesses) {
+        if (name.find(msProcess) != std::wstring::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ProcessMonitor::isDevelopmentTool(const std::wstring& name) const {
+    // Common development tool process names
+    static const std::vector<std::wstring> devTools = {
+        L"devenv.exe", L"code.exe", L"clion64.exe", L"pycharm64.exe",
+        L"idea64.exe", L"studio64.exe", L"gdb.exe", L"lldb.exe",
+        L"dotnet.exe", L"node.exe", L"python.exe", L"java.exe"
+    };
+
+    for (const auto& tool : devTools) {
+        if (name.find(tool) != std::wstring::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ProcessMonitor::isSystemService(const std::wstring& name) const {
+    // Common system service process names
+    static const std::vector<std::wstring> systemServices = {
+        L"svchost.exe", L"services.exe", L"lsass.exe", L"wininit.exe",
+        L"spoolsv.exe", L"taskhostw.exe", L"dwm.exe", L"csrss.exe"
+    };
+
+    for (const auto& service : systemServices) {
+        if (name.find(service) != std::wstring::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ProcessMonitor::isBackgroundTask(const std::wstring& name) const {
+    // Common background task process names
+    static const std::vector<std::wstring> backgroundTasks = {
+        L"RuntimeBroker.exe", L"SearchIndexer.exe", L"SearchHost.exe",
+        L"SearchApp.exe", L"backgroundTaskHost.exe", L"WmiPrvSE.exe"
+    };
+
+    for (const auto& task : backgroundTasks) {
+        if (name.find(task) != std::wstring::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::wstring ProcessMonitor::getProcessCompanyName(unsigned long pid) const {
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess) {
+        return L"";
+    }
+
+    wchar_t path[MAX_PATH];
+    DWORD size = MAX_PATH;
+    if (!QueryFullProcessImageNameW(hProcess, 0, path, &size)) {
+        CloseHandle(hProcess);
+        return L"";
+    }
+
+    // Get file version info
+    DWORD dummy;
+    DWORD versionSize = GetFileVersionInfoSizeW(path, &dummy);
+    if (versionSize == 0) {
+        CloseHandle(hProcess);
+        return L"";
+    }
+
+    std::vector<BYTE> versionInfo(versionSize);
+    if (!GetFileVersionInfoW(path, 0, versionSize, versionInfo.data())) {
+        CloseHandle(hProcess);
+        return L"";
+    }
+
+    VS_FIXEDFILEINFO* fileInfo;
+    UINT len;
+    if (!VerQueryValueW(versionInfo.data(), L"\\", (LPVOID*)&fileInfo, &len)) {
+        CloseHandle(hProcess);
+        return L"";
+    }
+
+    // Get company name
+    wchar_t companyName[256];
+    if (VerQueryValueW(versionInfo.data(), L"\\StringFileInfo\\040904E4\\CompanyName",
+        (LPVOID*)&companyName, &len)) {
+        CloseHandle(hProcess);
+        return std::wstring(companyName);
+    }
+
+    CloseHandle(hProcess);
+    return L"";
+}
+
+bool ProcessMonitor::isProcessSuspended(unsigned long pid) const {
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess) {
+        return false;
+    }
+
+    DWORD exitCode;
+    bool isSuspended = GetExitCodeProcess(hProcess, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(hProcess);
+    return isSuspended;
+}
+
+bool ProcessMonitor::isProcessService(unsigned long pid) const {
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess) {
+        return false;
+    }
+
+    HANDLE hToken;
+    if (!OpenProcessToken(hProcess, TOKEN_QUERY, &hToken)) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    DWORD tokenInfoLength;
+    if (!GetTokenInformation(hToken, TokenType, nullptr, 0, &tokenInfoLength)) {
+        CloseHandle(hToken);
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    std::vector<BYTE> tokenInfo(tokenInfoLength);
+    TOKEN_TYPE tokenType;
+    if (!GetTokenInformation(hToken, TokenType, tokenInfo.data(), tokenInfoLength, &tokenInfoLength)) {
+        CloseHandle(hToken);
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    // Check if the token type indicates a service
+    bool isService = (*(TOKEN_TYPE*)tokenInfo.data() == TokenPrimary);
+    
+    // Additional check for service status
+    SC_HANDLE hSCM = OpenSCManager(NULL, NULL, SC_MANAGER_ENUMERATE_SERVICE);
+    if (hSCM) {
+        DWORD bytesNeeded, servicesReturned;
+        EnumServicesStatusEx(hSCM, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_ACTIVE,
+            NULL, 0, &bytesNeeded, &servicesReturned, NULL, NULL);
+
+        if (bytesNeeded > 0) {
+            std::vector<BYTE> buffer(bytesNeeded);
+            ENUM_SERVICE_STATUS_PROCESS* services = (ENUM_SERVICE_STATUS_PROCESS*)buffer.data();
+
+            if (EnumServicesStatusEx(hSCM, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_ACTIVE,
+                buffer.data(), bytesNeeded, &bytesNeeded, &servicesReturned, NULL, NULL)) {
+                for (DWORD i = 0; i < servicesReturned; i++) {
+                    if (services[i].ServiceStatusProcess.dwProcessId == pid) {
+                        isService = true;
+                        break;
+                    }
+                }
+            }
+        }
+        CloseServiceHandle(hSCM);
+    }
+
+    CloseHandle(hToken);
+    CloseHandle(hProcess);
+    return isService;
 } 

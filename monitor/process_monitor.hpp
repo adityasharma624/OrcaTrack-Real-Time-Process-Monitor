@@ -18,6 +18,13 @@ struct ProcessInfo {
     int highUsageCount;   // New field to count consecutive high usage readings
     int priority;  // Current process priority
     
+    // New fields for grouping
+    bool isSystemProcess;
+    bool isService;
+    bool isElevated;
+    bool isSuspended;
+    std::wstring companyName;  // For Microsoft vs Third-party categorization
+    
     // CPU usage tracking
     FILETIME lastKernelTime;
     FILETIME lastUserTime;
@@ -25,6 +32,35 @@ struct ProcessInfo {
     ULARGE_INTEGER prevSystemTime;
     ULARGE_INTEGER prevUserTime;
     ULARGE_INTEGER prevKernelTime;
+};
+
+// New enum for process groups
+enum class ProcessGroup {
+    Default,  // Show all processes without filtering
+    SystemProcesses,
+    UserApplications,
+    BackgroundServices,
+    WindowsServices,
+    SystemDrivers,
+    HighCpuUsage,
+    HighMemoryUsage,
+    LowResourceUsage,
+    NormalResourceUsage,
+    RealTimePriority,
+    HighPriority,
+    AboveNormalPriority,
+    NormalPriority,
+    BelowNormalPriority,
+    IdlePriority,
+    Running,
+    Suspended,
+    Elevated,
+    SystemProtected,
+    MicrosoftProcesses,
+    ThirdPartyApplications,
+    DevelopmentTools,
+    SystemServices,
+    BackgroundTasks
 };
 
 // Forward declaration
@@ -58,7 +94,7 @@ public:
     bool resumeProcess(unsigned long pid);
     std::wstring getProcessPath(unsigned long pid);
     bool isProcessElevated(unsigned long pid);
-    bool canModifyProcess(unsigned long pid);
+    bool canModifyProcess(unsigned long pid) const;
     
     // Alert settings
     void setUsageThreshold(double threshold) { usageThreshold = threshold; }
@@ -69,6 +105,14 @@ public:
     }
     void setAlertTriggerCount(int count) { alertTriggerCount = count; }
     std::vector<ProcessInfo> getHighUsageProcesses() const;
+
+    // New grouping functions
+    std::vector<ProcessInfo> getProcessesByGroup(ProcessGroup group) const;
+    std::map<ProcessGroup, size_t> getProcessGroupCounts() const;
+    std::wstring getProcessCompanyName(unsigned long pid) const;
+    bool isProcessSuspended(unsigned long pid) const;
+    bool isProcessService(unsigned long pid) const;
+    bool isProcessSystem(unsigned long pid) const;
 
 private:
     struct ProcessTimes {
@@ -110,4 +154,11 @@ private:
     HANDLE openProcessWithPrivileges(unsigned long pid, DWORD access) const;
     bool adjustProcessPrivileges();
     bool hasProcessPrivileges() const;
+
+    // New helper functions for grouping
+    void updateProcessGroupInfo(ProcessInfo& info);
+    bool isMicrosoftProcess(const std::wstring& name) const;
+    bool isDevelopmentTool(const std::wstring& name) const;
+    bool isSystemService(const std::wstring& name) const;
+    bool isBackgroundTask(const std::wstring& name) const;
 }; 
