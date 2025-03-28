@@ -1,3 +1,8 @@
+# Real-Time-Process-Monitor/process_monitor.py
+# Aditya Sharma (9) -  Real-Time Updates and Visualization
+# Sayan Mondal (8) - GUI
+# Rajbardhan Kumar (22) - Process Gathering
+
 import tkinter as tk
 from tkinter import ttk
 import psutil
