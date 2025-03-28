@@ -5,12 +5,16 @@ import time
 from datetime import datetime
 import threading
 from queue import Queue
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+from collections import deque
 
 class ProcessMonitor:
     def __init__(self, root):
         self.root = root
         self.root.title("Process Monitor")
-        self.root.geometry("800x600")
+        self.root.geometry("900x650")
         
         # Create a queue for thread-safe communication
         self.update_queue = Queue()
@@ -26,12 +30,25 @@ class ProcessMonitor:
         self.info_frame = ttk.Frame(root)
         self.info_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         
-        self.process_frame = ttk.Frame(root)
-        self.process_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        # Create notebook for tabbed interface
+        self.notebook = ttk.Notebook(root)
+        self.notebook.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        
+        # Create process list tab
+        self.process_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.process_frame, text="Processes")
+        
+        # Create visualization tab
+        self.viz_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.viz_frame, text="CPU Visualization")
         
         # Configure process frame grid
         self.process_frame.grid_rowconfigure(0, weight=1)
         self.process_frame.grid_columnconfigure(0, weight=1)
+        
+        # Configure visualization frame grid
+        self.viz_frame.grid_rowconfigure(0, weight=1)
+        self.viz_frame.grid_columnconfigure(0, weight=1)
         
         # Create system info labels
         self.cpu_label = ttk.Label(self.info_frame, text="Total CPU Usage: 0%")
@@ -67,6 +84,13 @@ class ProcessMonitor:
         self.tree.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
         
+        # Create CPU usage visualization
+        self.setup_visualization()
+        
+        # Data for storing history
+        self.cpu_history = deque(maxlen=60)  # Store 60 data points (30 seconds at 0.5s interval)
+        self.top_processes_history = {}  # Store history for top processes
+        
         # Start the update thread
         self.running = True
         self.update_thread = threading.Thread(target=self.update_loop, daemon=True)
@@ -74,6 +98,96 @@ class ProcessMonitor:
         
         # Start checking for updates
         self.check_updates()
+    
+    def setup_visualization(self):
+        """Set up the CPU usage visualization"""
+        # Create matplotlib figure
+        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(8, 6), dpi=100)
+        self.fig.tight_layout(pad=3.0)
+        
+        # Create the canvas to display the plots
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.viz_frame)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        
+        # Set up the first plot for total CPU usage
+        self.ax1.set_title('Total CPU Usage (%)')
+        self.ax1.set_ylim(0, 100)
+        self.ax1.set_xlim(0, 60)
+        self.ax1.grid(True)
+        
+        # Create empty line for the plot
+        self.cpu_line, = self.ax1.plot([], [], 'b-', linewidth=2)
+        
+        # Set up the second plot for top 5 processes
+        self.ax2.set_title('Top 5 Process CPU Usage (%)')
+        self.ax2.set_ylim(0, 100)
+        self.ax2.set_xlim(0, 60)
+        self.ax2.grid(True)
+        
+        # Create empty lines for the top 5 processes
+        self.process_lines = {}
+        self.process_labels = {}
+        
+    def update_visualization(self, cpu_percent, top_processes):
+        """Update the CPU usage visualization"""
+        # Update CPU history
+        self.cpu_history.append(cpu_percent)
+        
+        # Update the CPU usage plot
+        y_data = list(self.cpu_history)
+        x_data = list(range(len(y_data)))
+        
+        self.cpu_line.set_data(x_data, y_data)
+        
+        if len(x_data) > 0:
+            self.ax1.set_xlim(0, max(60, len(x_data)))
+        
+        # Update top processes
+        for proc in top_processes:
+            pid = proc['pid']
+            cpu = proc['cpu_percent']
+            name = proc['name']
+            
+            # Initialize history for new processes
+            if pid not in self.top_processes_history:
+                self.top_processes_history[pid] = {
+                    'history': deque([0] * len(self.cpu_history), maxlen=60),
+                    'name': name
+                }
+                
+                # Create a new line if needed
+                if pid not in self.process_lines:
+                    color = plt.cm.tab10(len(self.process_lines) % 10)
+                    line, = self.ax2.plot([], [], label=f"{name} (PID: {pid})", linewidth=1.5, color=color)
+                    self.process_lines[pid] = line
+            
+            # Update process history
+            self.top_processes_history[pid]['history'].append(cpu)
+        
+        # Remove processes that are no longer in top 5
+        current_pids = [p['pid'] for p in top_processes]
+        for pid in list(self.process_lines.keys()):
+            if pid not in current_pids:
+                if pid in self.process_lines:
+                    self.process_lines[pid].remove()
+                    del self.process_lines[pid]
+                if pid in self.top_processes_history:
+                    del self.top_processes_history[pid]
+        
+        # Update the process usage plots
+        for pid, data in self.top_processes_history.items():
+            if pid in self.process_lines:
+                y_data = list(data['history'])
+                x_data = list(range(len(y_data)))
+                self.process_lines[pid].set_data(x_data, y_data)
+        
+        # Update the legend
+        if self.process_lines:
+            self.ax2.legend(loc='upper left')
+        
+        # Redraw the canvas
+        self.canvas.draw()
     
     def update_loop(self):
         """Background thread that collects system and process information"""
@@ -136,6 +250,10 @@ class ProcessMonitor:
                     except (KeyError, AttributeError):
                         continue
                 
+                # Update visualization (only take top 5 processes for the chart)
+                top_processes = processes[:5]
+                self.update_visualization(cpu_percent, top_processes)
+                
         except Exception as e:
             print(f"Error updating UI: {e}")
         
@@ -154,4 +272,4 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
-    main() 
+    main()
