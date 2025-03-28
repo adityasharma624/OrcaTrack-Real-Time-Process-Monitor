@@ -372,7 +372,14 @@ class ProcessMonitor:
                             try:
                                 pid = proc_info['pid']
                                 proc = psutil.Process(pid)
-                                proc_info['cpu_percent'] = proc.cpu_percent() / self.num_cores
+                                
+                                # Smooth CPU percentage by averaging with the previous value
+                                new_cpu_percent = proc.cpu_percent(interval=None) / self.num_cores
+                                proc_info['cpu_percent'] = (
+                                    0.7 * proc_info['cpu_percent'] + 0.3 * new_cpu_percent
+                                    if proc_info['cpu_percent'] > 0 else new_cpu_percent
+                                )
+                                
                                 processes.append(proc_info)
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
                                 pass
