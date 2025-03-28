@@ -1,2 +1,4 @@
 psutil==5.9.8
 tk==0.1.0  # Included for completeness, though it usually comes with Python 
+numpy==1.26.4
+matplotlib==3.8.3
