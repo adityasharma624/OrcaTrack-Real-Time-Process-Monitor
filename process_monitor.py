@@ -185,6 +185,7 @@ class ProcessMonitor:
         self.top_processes_history = {}  # Store history for top processes
         self.current_sort = {"column": "CPU%", "reverse": True}  # Default sort
         self.filter_text = ""
+        self.last_processes = []  # Initialize last_processes to avoid attribute errors
         
         # Start the update thread
         self.running = True
@@ -323,9 +324,8 @@ class ProcessMonitor:
         self.fig.canvas.flush_events()
     
     def filter_processes(self, *args):
-        """Filter processes based on search text"""
+        """Filter processes based on the search text entered by the user."""
         self.filter_text = self.search_var.get().lower()
-        # The actual filtering happens in check_updates
     
     def sort_processes_by(self, column):
         """Sort processes by the specified column"""
@@ -338,9 +338,8 @@ class ProcessMonitor:
         # The actual sorting happens in check_updates
     
     def update_loop(self):
-        """Background thread with optimized collection"""
+        """Background thread to collect system and process information."""
         last_full_update = time.time()
-        
         while self.running:
             try:
                 # Get system info
@@ -355,8 +354,8 @@ class ProcessMonitor:
                     for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_info']):
                         try:
                             pinfo = proc.info
-                            # Skip System Idle Process and convert per-core percentage to system-wide percentage
                             if pinfo['name'].lower() not in ['system idle process', 'idle']:
+                                # Convert per-core percentage to system-wide percentage
                                 pinfo['cpu_percent'] = pinfo['cpu_percent'] / self.num_cores
                                 processes.append(pinfo)
                         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -491,7 +490,7 @@ class ProcessMonitor:
         except Exception as e:
             print(f"Error updating UI: {e}")
         
-        # Schedule next check - longer interval
+        # Schedule the next UI update after 500ms
         self.root.after(500, self.check_updates)
     
     def __del__(self):
