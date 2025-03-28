@@ -15,20 +15,19 @@ A Python-based process monitoring application that provides real-time informatio
   - Process name
   - CPU usage percentage (normalized across all cores)
   - Memory usage in MB
-  - Process health status (Stable, CPU Intensive, Memory Intensive, etc.)
-  - Auto-sorting by any column
-  - Process filtering and search
+  - Auto-sorting by any column (PID, Name, CPU%, Memory)
+  - Process filtering and search functionality
 
 - **Visualization**
   - Real-time CPU usage graphs
-  - Historical CPU trends
-  - Top processes CPU usage tracking
-  - Dark theme for better visibility
+  - Historical CPU trends (last 60 seconds)
+  - Top 5 processes CPU usage tracking
+  - Color-coded process identification for better clarity
 
 - **User Interface**
   - Clean, modern dark interface
   - Tabbed interface for processes and visualizations
-  - Interactive progress bars
+  - Interactive progress bars for CPU and memory usage
   - Sortable columns with click headers
   - Scrollable process list with proper sizing
   - Column separators for better readability
@@ -40,6 +39,7 @@ A Python-based process monitoring application that provides real-time informatio
 - psutil library
 - matplotlib library
 - numpy library
+- tkinter (comes pre-installed with Python)
 
 ## Installation
 
@@ -62,24 +62,28 @@ python process_monitor.py
 ```
 
 The application will open with the following features:
-- **Process Tab**: View and manage running processes
-  - System information at the top (CPU and memory usage)
-  - Search bar for filtering processes
+- **Processes Tab**: View and manage running processes
+  - System information at the top (CPU and memory usage with progress bars)
+  - Search bar for filtering processes by name or PID
   - Scrollable list of processes with detailed information
-  - Process status indication for identifying problematic processes
+  - Sortable columns for PID, Name, CPU%, and Memory
+  - Auto-updating process list with real-time data
 
 - **Visualization Tab**: View real-time CPU usage graphs
   - Overall system CPU utilization over time
-  - Top 5 process CPU usage tracking
-  - Color-coded process identification
+  - Top 5 processes CPU usage tracking
+  - Color-coded process identification for better visualization
 
 ## Advanced Features
 
-- **Process Status Monitoring**:
-  - Automatic detection of CPU-intensive processes
-  - Memory usage tracking and alerting
-  - Status categorization (Stable, CPU Intensive, Memory Intensive, etc.)
-  - Historical resource usage tracking
+- **Process Filtering and Sorting**:
+  - Search for processes by name or PID
+  - Sort processes by any column (PID, Name, CPU%, Memory) with ascending/descending order
+
+- **Real-time Visualization**:
+  - Smooth updates for CPU usage and top processes
+  - Historical data tracking for the last 60 seconds
+  - Interactive and responsive graphs with color-coded lines
 
 - **Performance Optimizations**:
   - Efficient UI updates to reduce overhead
@@ -88,11 +92,10 @@ The application will open with the following features:
 
 ## Notes
 
-- The CPU usage shown for each process is normalized across all CPU cores
-- System idle processes are filtered out for clarity
-- Process status is determined by analyzing resource usage patterns over time
-- Some process information might not be available due to system permissions
-- The application requires appropriate system permissions to access process information
+- The CPU usage shown for each process is normalized across all CPU cores.
+- System idle processes are filtered out for clarity.
+- Some process information might not be available due to system permissions.
+- The application requires appropriate system permissions to access process information.
 
 ## Contributing
 
